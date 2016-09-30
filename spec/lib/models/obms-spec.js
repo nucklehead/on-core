@@ -215,6 +215,27 @@ describe('Models.Obms', function () {
                 expect(obm).to.be.undefined;
             });
         });
+
+        it('should find all nodes for nodeId', function() {
+            return obms.findAllByNode(nodeId, false)
+            .then(function(obms) {
+                expect(obms).to.have.length(testObms.length);
+                obms.forEach(function(obm) {
+                    expect(obm.node).to.equal(nodeId);
+                    expect(obm.toJSON().config).not.to.have.property('password');
+                });
+            });
+        });
+
+        it('should find all nodes for nodeId and reveal passwords', function() {
+            return obms.findAllByNode(nodeId, true, {service: 'ipmi-obm-service'})
+            .then(function(obms) {
+                expect(obms).to.have.length(1);
+                expect(obms[0].node).to.equal(nodeId);
+                expect(obms[0].service).to.equal('ipmi-obm-service');
+                expect(obms[0].config.password).to.equal(testObms[0].config.password);
+            });
+        });
     });
 
     describe('update', function() {
@@ -327,6 +348,57 @@ describe('Models.Obms', function () {
             })
             .then(function(count) {
                 expect(count).to.equal(1);
+            });
+        });
+
+        it('should reveal secrets', function() {
+            var node = { id: 'aaa', obms: [ { service: 'snmp-obm-service' } ]};
+            this.sandbox.stub(eventProtocol, 'publishNodeAttrEvent').resolves();
+            this.sandbox.stub(waterline.nodes, 'getNodeById').resolves();
+            waterline.nodes.getNodeById.resolves(node);
+
+            return nodes.create({name: 'a node'})
+            .then(function(node) {
+               return obms.upsertByNode(
+                    node.id,
+                    {
+                       service: 'ipmi-obm-service',
+                       config: {
+                           host: 'ipmi-host',
+                           user: 'ipmi-user',
+                           password: 'ipmi-password'
+                       }
+                    },
+                    { revealSecrets: true }
+                );
+            })
+            .then(function(obm) {
+                expect(obm.config).to.have.property('password')
+                    .that.equals('ipmi-password');
+            });
+        });
+
+        it('should not reveal secrets', function() {
+            var node = { id: 'aaa', obms: [ { service: 'snmp-obm-service' } ]};
+            this.sandbox.stub(eventProtocol, 'publishNodeAttrEvent').resolves();
+            this.sandbox.stub(waterline.nodes, 'getNodeById').resolves();
+            waterline.nodes.getNodeById.resolves(node);
+
+            return nodes.create({name: 'a node'})
+            .then(function(node) {
+               return obms.upsertByNode(node.id, {
+                    service: 'ipmi-obm-service',
+                    config: {
+                        host: 'ipmi-host',
+                        user: 'ipmi-user',
+                        password: 'ipmi-password'
+                    }
+                });
+            })
+            .then(function(obm) {
+                expect(obm.config).to.have.property('password')
+                    .and.not.equal('ipmi-password');
+                expect(encryption.decrypt(obm.config.password)).to.equal('ipmi-password');
             });
         });
     });
